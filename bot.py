@@ -4,7 +4,7 @@ Simple Slurry Order Bot
 
 import os
 import logging
-import smtplib
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
@@ -63,7 +63,6 @@ def order_summary(data):
     )
 
 
-import requests
 
 def send_order_email(data):
     try:
