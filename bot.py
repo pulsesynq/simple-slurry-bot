@@ -49,7 +49,7 @@ CONTAINER_OPTIONS = ["3.5 Gallon", "5 Gallon Bucket", "55 Gallon Drum"]
 
 
 def order_summary(data: dict) -> str:
-    ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
     return (
         f"🛒  SIMPLE SLURRY ORDER\n"
         f"{'─'*36}\n"
@@ -139,7 +139,7 @@ async def get_container_size(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 
     ctx.user_data["container_size"] = choice
     await update.message.reply_text(
-        "🍬 *What flavor would you like?*\n_(Example: Watermelon, Blue Raspberry, Mango)_",
+        "🍬 *What flavor would you like?*\n_(Write in your desired flavor — e.g. Watermelon, Blue Raspberry, Mango)_",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -149,7 +149,7 @@ async def get_container_size(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 async def get_flavor(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["flavor"] = update.message.text.strip()
     await update.message.reply_text(
-        "⚖️ *How many units are you ordering?*\n_(Example: 4 buckets, 1 drum, 10 x 3.5 gal)_",
+        "⚖️ *How many units are you ordering?*\n_(e.g. 4 buckets, 1 drum, 10 x 3.5 gal)_",
         parse_mode="Markdown",
     )
     return QUANTITY
@@ -166,7 +166,10 @@ async def get_quantity(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def get_address(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["address"] = update.message.text.strip()
-    await update.message.reply_text("📞 *Your contact phone and/or email?*", parse_mode="Markdown")
+    await update.message.reply_text(
+        "📞 *Your contact phone and/or email?*",
+        parse_mode="Markdown",
+    )
     return CONTACT
 
 
@@ -188,8 +191,8 @@ async def get_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
     await update.message.reply_text(
         f"*Please review your order:*\n\n`{summary}`\n\n"
-        "To send this order, tap *SUBMIT*.\n"
-        "To cancel, tap *CANCEL*.",
+        "Tap *SUBMIT* to send this order.\n"
+        "Tap *CANCEL* to cancel.",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
     )
@@ -199,7 +202,7 @@ async def get_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     choice = update.message.text.strip().lower()
 
-    if choice in ["submit", "yes", "y", "confirm"]:
+    if choice in ["submit", "yes", "y", "confirm", "✅ confirm & submit"]:
         await update.message.reply_text(
             "⏳ Submitting your order...",
             reply_markup=ReplyKeyboardRemove(),
@@ -216,14 +219,14 @@ async def confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             )
         else:
             await update.message.reply_text(
-                "⚠️ Order was recorded, but there was an issue sending the email notification. "
-                "Please contact us directly to confirm your order."
+                "⚠️ Order was recorded but there was an issue sending the email notification. "
+                "Please contact us directly to confirm your order.",
             )
 
         ctx.user_data.clear()
         return ConversationHandler.END
 
-    if choice in ["cancel", "no", "n"]:
+    if choice in ["cancel", "no", "n", "❌ cancel"]:
         await update.message.reply_text(
             "❌ Order cancelled. Type /start to begin a new order.",
             reply_markup=ReplyKeyboardRemove(),
