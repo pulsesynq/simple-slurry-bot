@@ -73,7 +73,7 @@ def send_order_email(data):
                 "Content-Type": "application/json",
             },
             json={
-                "from": "Simple Slurry <onboarding@resend.dev>",
+                "from": "Simple Slurry Orders <info@rivertonsupply.com>",
                 "to": [ORDER_EMAIL_TO],
                 "subject": f"New Simple Slurry Order — {data['company']}",
                 "text": order_summary(data),
