@@ -63,21 +63,29 @@ def order_summary(data):
     )
 
 
+import requests
+
 def send_order_email(data):
-    subject = f"New Simple Slurry Order — {data['company']} ({data['container_size']})"
-    body = order_summary(data)
-
-    msg = MIMEMultipart()
-    msg["From"] = SMTP_USER
-    msg["To"] = ORDER_EMAIL_TO
-    msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
-
     try:
-        with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=30) as server:
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, ORDER_EMAIL_TO, msg.as_string())
-        return True
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {os.environ['RESEND_API_KEY']}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": "Simple Slurry <onboarding@resend.dev>",
+                "to": [ORDER_EMAIL_TO],
+                "subject": f"New Simple Slurry Order — {data['company']}",
+                "text": order_summary(data),
+            },
+            timeout=30,
+        )
+
+        logger.info("Resend response: %s", response.text)
+
+        return response.status_code in [200, 201]
+
     except Exception as e:
         logger.error("Email send failed: %s", e)
         return False
