@@ -1,6 +1,6 @@
 """
 Simple Slurry Order Bot
-Guides customers through a step-by-step order form and emails the summary.
+Step-by-step order intake form via Telegram. Emails completed orders.
 """
 
 import os
@@ -31,23 +31,24 @@ logger = logging.getLogger(__name__)
     COMPANY,
     LICENSE,
     CONTAINER_SIZE,
-    FLAVOR,
     QUANTITY,
+    FLAVOR,
     ADDRESS,
-    CONTACT,
+    CONTACT_PHONE,
+    CONTACT_EMAIL,
     NOTES,
     CONFIRM,
-) = range(10)
+) = range(11)
 
-# ── Config (set via environment variables) ───────────────────────────────────
+# ── Config ───────────────────────────────────────────────────────────────────
 BOT_TOKEN      = os.environ["TELEGRAM_BOT_TOKEN"]
 SMTP_HOST      = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT      = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER      = os.environ["SMTP_USER"]       # your Gmail or SMTP address
-SMTP_PASSWORD  = os.environ["SMTP_PASSWORD"]   # app password
-ORDER_EMAIL_TO = os.environ["ORDER_EMAIL_TO"]  # where orders get sent
+SMTP_USER      = os.environ["SMTP_USER"]
+SMTP_PASSWORD  = os.environ["SMTP_PASSWORD"]
+ORDER_EMAIL_TO = os.environ["ORDER_EMAIL_TO"]
 
-CONTAINER_OPTIONS = ["3.5 Gallon", "5 Gallon Bucket", "55 Gallon Drum"]
+CONTAINER_OPTIONS = ["3.5 Gallon", "5 Gallon", "55 Gallon Drum"]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -57,27 +58,31 @@ def order_summary(data: dict) -> str:
     return (
         f"🛒  SIMPLE SLURRY ORDER\n"
         f"{'─'*36}\n"
-        f"📅  Submitted:     {ts}\n"
-        f"👤  Customer:      {data['name']}\n"
-        f"🏢  Company:       {data['company']}\n"
-        f"🪪  License #:     {data['license']}\n"
-        f"📦  Container:     {data['container_size']}\n"
-        f"🍬  Flavor:        {data['flavor']}\n"
-        f"⚖️   Quantity:      {data['quantity']}\n"
-        f"🚚  Ship To:       {data['address']}\n"
-        f"📞  Contact:       {data['contact']}\n"
-        f"📝  Notes:         {data.get('notes', 'None')}\n"
+        f"📅  Submitted:        {ts}\n"
+        f"👤  Full Name:        {data['name']}\n"
+        f"🏢  Company:          {data['company']}\n"
+        f"🪪  License #:        {data['license']}\n"
+        f"📦  Container Size:   {data['container_size']}\n"
+        f"⚖️   Quantity:         {data['quantity']}\n"
+        f"🍬  Flavor:           {data['flavor']}\n"
+        f"🚚  Ship To:          {data['address']}\n"
+        f"📞  Phone:            {data['phone']}\n"
+        f"📧  Email:            {data['email']}\n"
+        f"📝  Notes:            {data.get('notes', 'None')}\n"
         f"{'─'*36}"
     )
 
 
 def send_order_email(data: dict) -> bool:
-    subject = f"New Simple Slurry Order — {data['company']} ({data['container_size']})"
+    subject = (
+        f"New Slurry Order — {data['company']} | "
+        f"{data['quantity']} x {data['container_size']} | {data['flavor']}"
+    )
     body = order_summary(data)
 
     msg = MIMEMultipart()
-    msg["From"] = SMTP_USER
-    msg["To"] = ORDER_EMAIL_TO
+    msg["From"]    = SMTP_USER
+    msg["To"]      = ORDER_EMAIL_TO
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
 
@@ -92,15 +97,14 @@ def send_order_email(data: dict) -> bool:
         return False
 
 
-# ── Conversation handlers ────────────────────────────────────────────────────
+# ── Handlers ─────────────────────────────────────────────────────────────────
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data.clear()
     await update.message.reply_text(
-        "👋 Welcome to the *Simple Slurry Order Form*!\n\n"
-        "I'll walk you through placing your order step by step.\n"
-        "Type /cancel at any time to start over.\n\n"
-        "Let's begin — *What's your full name?*",
+        "👋 Welcome to the *Simple Slurry Order Form!*\n\n"
+        "I'll guide you through each step. Type /cancel at any time to start over.\n\n"
+        "*What is your full name?*",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -109,14 +113,17 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def get_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["name"] = update.message.text.strip()
-    await update.message.reply_text("🏢 *What's your company name?*", parse_mode="Markdown")
+    await update.message.reply_text(
+        "🏢 *What is your company name?*",
+        parse_mode="Markdown",
+    )
     return COMPANY
 
 
 async def get_company(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["company"] = update.message.text.strip()
     await update.message.reply_text(
-        "🪪 *What's your license number?*\n_(Type 'N/A' if not applicable)_",
+        "🪪 *What is your license number?*\n_(Type N/A if not applicable)_",
         parse_mode="Markdown",
     )
     return LICENSE
@@ -124,11 +131,13 @@ async def get_company(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def get_license(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["license"] = update.message.text.strip()
-    keyboard = [[s] for s in CONTAINER_OPTIONS]
+    keyboard = [[opt] for opt in CONTAINER_OPTIONS]
     await update.message.reply_text(
         "📦 *Select your container size:*",
         parse_mode="Markdown",
-        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard, one_time_keyboard=True, resize_keyboard=True
+        ),
     )
     return CONTAINER_SIZE
 
@@ -136,26 +145,19 @@ async def get_license(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def get_container_size(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     choice = update.message.text.strip()
     if choice not in CONTAINER_OPTIONS:
-        keyboard = [[s] for s in CONTAINER_OPTIONS]
+        keyboard = [[opt] for opt in CONTAINER_OPTIONS]
         await update.message.reply_text(
             "Please choose one of the options below:",
-            reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard, one_time_keyboard=True, resize_keyboard=True
+            ),
         )
         return CONTAINER_SIZE
     ctx.user_data["container_size"] = choice
     await update.message.reply_text(
-        "🍬 *What flavor would you like?*\n_(Write in your desired flavor — e.g. Watermelon, Blue Raspberry, Mango)_",
+        f"⚖️ *How many {choice}s would you like to order?*",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove(),
-    )
-    return FLAVOR
-
-
-async def get_flavor(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    ctx.user_data["flavor"] = update.message.text.strip()
-    await update.message.reply_text(
-        "⚖️ *How many units are you ordering?*\n_(e.g. 4 buckets, 1 drum, 10 x 3.5 gal)_",
-        parse_mode="Markdown",
     )
     return QUANTITY
 
@@ -163,7 +165,16 @@ async def get_flavor(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def get_quantity(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["quantity"] = update.message.text.strip()
     await update.message.reply_text(
-        "🚚 *What's the delivery address?*\n_(Full street address including city, state, zip)_",
+        "🍬 *What flavor would you like?*\n_(e.g. Watermelon, Blue Raspberry, Mango)_",
+        parse_mode="Markdown",
+    )
+    return FLAVOR
+
+
+async def get_flavor(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data["flavor"] = update.message.text.strip()
+    await update.message.reply_text(
+        "🚚 *What is the shipping address?*\n_(Full address including city, state, and zip)_",
         parse_mode="Markdown",
     )
     return ADDRESS
@@ -172,14 +183,23 @@ async def get_quantity(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def get_address(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["address"] = update.message.text.strip()
     await update.message.reply_text(
-        "📞 *Your contact phone and/or email?*",
+        "📞 *What is your contact phone number?*",
         parse_mode="Markdown",
     )
-    return CONTACT
+    return CONTACT_PHONE
 
 
-async def get_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    ctx.user_data["contact"] = update.message.text.strip()
+async def get_contact_phone(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data["phone"] = update.message.text.strip()
+    await update.message.reply_text(
+        "📧 *What is your contact email address?*",
+        parse_mode="Markdown",
+    )
+    return CONTACT_EMAIL
+
+
+async def get_contact_email(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data["email"] = update.message.text.strip()
     await update.message.reply_text(
         "📝 *Any special instructions or notes?*\n_(Type 'none' to skip)_",
         parse_mode="Markdown",
@@ -188,16 +208,17 @@ async def get_contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def get_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    notes = update.message.text.strip()
-    ctx.user_data["notes"] = notes if notes.lower() != "none" else "None"
+    raw = update.message.text.strip()
+    ctx.user_data["notes"] = "None" if raw.lower() == "none" else raw
 
     summary = order_summary(ctx.user_data)
     keyboard = [["✅ Confirm & Submit", "❌ Cancel"]]
     await update.message.reply_text(
-        f"*Please review your order:*\n\n`{summary}`\n\n"
-        "Ready to submit?",
+        f"*Please review your order:*\n\n`{summary}`\n\nReady to submit?",
         parse_mode="Markdown",
-        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard, one_time_keyboard=True, resize_keyboard=True
+        ),
     )
     return CONFIRM
 
@@ -214,14 +235,14 @@ async def confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         if success:
             await update.message.reply_text(
                 "✅ *Order submitted!*\n\n"
-                "We received your order and will be in touch shortly. "
+                "We've received your order and will be in touch shortly. "
                 "Thank you for ordering Simple Slurry! 🍬",
                 parse_mode="Markdown",
             )
         else:
             await update.message.reply_text(
-                "⚠️ Order was recorded but there was an issue sending the email notification. "
-                "Please contact us directly to confirm your order.",
+                "⚠️ Your order was recorded but we had trouble sending the email confirmation. "
+                "Please contact us directly to confirm.",
             )
     else:
         await update.message.reply_text(
@@ -236,7 +257,7 @@ async def confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data.clear()
     await update.message.reply_text(
-        "Order cancelled. Type /start whenever you're ready to place an order.",
+        "Order cancelled. Type /start whenever you're ready.",
         reply_markup=ReplyKeyboardRemove(),
     )
     return ConversationHandler.END
@@ -254,10 +275,11 @@ def main() -> None:
             COMPANY:        [MessageHandler(filters.TEXT & ~filters.COMMAND, get_company)],
             LICENSE:        [MessageHandler(filters.TEXT & ~filters.COMMAND, get_license)],
             CONTAINER_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_container_size)],
-            FLAVOR:         [MessageHandler(filters.TEXT & ~filters.COMMAND, get_flavor)],
             QUANTITY:       [MessageHandler(filters.TEXT & ~filters.COMMAND, get_quantity)],
+            FLAVOR:         [MessageHandler(filters.TEXT & ~filters.COMMAND, get_flavor)],
             ADDRESS:        [MessageHandler(filters.TEXT & ~filters.COMMAND, get_address)],
-            CONTACT:        [MessageHandler(filters.TEXT & ~filters.COMMAND, get_contact)],
+            CONTACT_PHONE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, get_contact_phone)],
+            CONTACT_EMAIL:  [MessageHandler(filters.TEXT & ~filters.COMMAND, get_contact_email)],
             NOTES:          [MessageHandler(filters.TEXT & ~filters.COMMAND, get_notes)],
             CONFIRM:        [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm)],
         },
