@@ -25,7 +25,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── Conversation states ──────────────────────────────────────────────────────
 (
     NAME,
     COMPANY,
@@ -39,21 +38,18 @@ logger = logging.getLogger(__name__)
     CONFIRM,
 ) = range(10)
 
-# ── Config (set via environment variables) ───────────────────────────────────
-BOT_TOKEN      = os.environ["TELEGRAM_BOT_TOKEN"]
-SMTP_HOST      = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT      = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER      = os.environ["SMTP_USER"]       # your Gmail or SMTP address
-SMTP_PASSWORD  = os.environ["SMTP_PASSWORD"]   # app password
-ORDER_EMAIL_TO = os.environ["ORDER_EMAIL_TO"]  # where orders get sent
+BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.environ["SMTP_USER"]
+SMTP_PASSWORD = os.environ["SMTP_PASSWORD"]
+ORDER_EMAIL_TO = os.environ["ORDER_EMAIL_TO"]
 
 CONTAINER_OPTIONS = ["3.5 Gallon", "5 Gallon Bucket", "55 Gallon Drum"]
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
 def order_summary(data: dict) -> str:
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+    ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     return (
         f"🛒  SIMPLE SLURRY ORDER\n"
         f"{'─'*36}\n"
@@ -91,8 +87,6 @@ def send_order_email(data: dict) -> bool:
         logger.error("Email send failed: %s", e)
         return False
 
-
-# ── Conversation handlers ────────────────────────────────────────────────────
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data.clear()
@@ -142,9 +136,10 @@ async def get_container_size(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
         )
         return CONTAINER_SIZE
+
     ctx.user_data["container_size"] = choice
     await update.message.reply_text(
-        "🍬 *What flavor would you like?*\n_(Write in your desired flavor — e.g. Watermelon, Blue Raspberry, Mango)_",
+        "🍬 *What flavor would you like?*\n_(Example: Watermelon, Blue Raspberry, Mango)_",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -154,7 +149,7 @@ async def get_container_size(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 async def get_flavor(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["flavor"] = update.message.text.strip()
     await update.message.reply_text(
-        "⚖️ *How many units are you ordering?*\n_(e.g. 4 buckets, 1 drum, 10 x 3.5 gal)_",
+        "⚖️ *How many units are you ordering?*\n_(Example: 4 buckets, 1 drum, 10 x 3.5 gal)_",
         parse_mode="Markdown",
     )
     return QUANTITY
@@ -171,10 +166,7 @@ async def get_quantity(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def get_address(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["address"] = update.message.text.strip()
-    await update.message.reply_text(
-        "📞 *Your contact phone and/or email?*",
-        parse_mode="Markdown",
-    )
+    await update.message.reply_text("📞 *Your contact phone and/or email?*", parse_mode="Markdown")
     return CONTACT
 
 
@@ -192,10 +184,12 @@ async def get_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["notes"] = notes if notes.lower() != "none" else "None"
 
     summary = order_summary(ctx.user_data)
-    keyboard = [["✅ Confirm & Submit", "❌ Cancel"]]
+    keyboard = [["SUBMIT", "CANCEL"]]
+
     await update.message.reply_text(
         f"*Please review your order:*\n\n`{summary}`\n\n"
-        "Ready to submit?",
+        "To send this order, tap *SUBMIT*.\n"
+        "To cancel, tap *CANCEL*.",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
     )
@@ -203,14 +197,16 @@ async def get_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    choice = update.message.text.strip()
+    choice = update.message.text.strip().lower()
 
-    if choice == "✅ Confirm & Submit":
+    if choice in ["submit", "yes", "y", "confirm"]:
         await update.message.reply_text(
             "⏳ Submitting your order...",
             reply_markup=ReplyKeyboardRemove(),
         )
+
         success = send_order_email(ctx.user_data)
+
         if success:
             await update.message.reply_text(
                 "✅ *Order submitted!*\n\n"
@@ -220,17 +216,28 @@ async def confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             )
         else:
             await update.message.reply_text(
-                "⚠️ Order was recorded but there was an issue sending the email notification. "
-                "Please contact us directly to confirm your order.",
+                "⚠️ Order was recorded, but there was an issue sending the email notification. "
+                "Please contact us directly to confirm your order."
             )
-    else:
+
+        ctx.user_data.clear()
+        return ConversationHandler.END
+
+    if choice in ["cancel", "no", "n"]:
         await update.message.reply_text(
             "❌ Order cancelled. Type /start to begin a new order.",
             reply_markup=ReplyKeyboardRemove(),
         )
+        ctx.user_data.clear()
+        return ConversationHandler.END
 
-    ctx.user_data.clear()
-    return ConversationHandler.END
+    keyboard = [["SUBMIT", "CANCEL"]]
+    await update.message.reply_text(
+        "Please tap *SUBMIT* to send this order, or *CANCEL* to cancel.",
+        parse_mode="Markdown",
+        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
+    )
+    return CONFIRM
 
 
 async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -242,24 +249,22 @@ async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
-
 def main() -> None:
     app = Application.builder().token(BOT_TOKEN).build()
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            NAME:           [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
-            COMPANY:        [MessageHandler(filters.TEXT & ~filters.COMMAND, get_company)],
-            LICENSE:        [MessageHandler(filters.TEXT & ~filters.COMMAND, get_license)],
+            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
+            COMPANY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_company)],
+            LICENSE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_license)],
             CONTAINER_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_container_size)],
-            FLAVOR:         [MessageHandler(filters.TEXT & ~filters.COMMAND, get_flavor)],
-            QUANTITY:       [MessageHandler(filters.TEXT & ~filters.COMMAND, get_quantity)],
-            ADDRESS:        [MessageHandler(filters.TEXT & ~filters.COMMAND, get_address)],
-            CONTACT:        [MessageHandler(filters.TEXT & ~filters.COMMAND, get_contact)],
-            NOTES:          [MessageHandler(filters.TEXT & ~filters.COMMAND, get_notes)],
-            CONFIRM:        [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm)],
+            FLAVOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_flavor)],
+            QUANTITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_quantity)],
+            ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_address)],
+            CONTACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_contact)],
+            NOTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_notes)],
+            CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
